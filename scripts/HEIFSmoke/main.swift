@@ -77,7 +77,14 @@ func verifyMOV(_ resources: LivePhotoResources, expectedFrameCount: Int) async t
     var presentationTimes: [Double] = []
     var syncFrameIndexes: [Int] = []
     while let sample = output.copyNextSampleBuffer() {
+        let sampleCount = CMSampleBufferGetNumSamples(sample)
+        // Reader outputs can include empty marker buffers. They are not frames
+        // and have no presentation timestamp.
+        if sampleCount == 0 { continue }
+        try require(sampleCount == 1, "Unexpected batched compressed video samples")
         let time = CMSampleBufferGetPresentationTimeStamp(sample)
+        try require(time.seconds.isFinite,
+                    "Invalid video PTS: samples=\(sampleCount), bytes=\(CMSampleBufferGetTotalSampleSize(sample))")
         presentationTimes.append(time.seconds)
         let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[String: Any]]
         let notSync = attachments?.first?[kCMSampleAttachmentKey_NotSync as String] as? Bool ?? false
