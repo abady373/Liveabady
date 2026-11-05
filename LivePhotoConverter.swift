@@ -267,7 +267,6 @@ private final class EncodingJob {
             }
             metadataDone = true
             metadataInput.markAsFinished()
-            metadataInput.stopRequestingMediaData()
             finishIfReady()
         }
         videoInput.requestMediaDataWhenReady(on: queue) { [self] in
@@ -289,7 +288,6 @@ private final class EncodingJob {
                 if nextFrame == frameCount {
                     videoDone = true
                     videoInput.markAsFinished()
-                    videoInput.stopRequestingMediaData()
                     finishIfReady()
                 }
             } catch { fail(error) }
@@ -366,8 +364,6 @@ private final class EncodingJob {
     private func fail(_ error: Error) {
         guard !completed else { return }
         completed = true
-        videoInput.stopRequestingMediaData()
-        metadataInput.stopRequestingMediaData()
         writer.cancelWriting()
         try? FileManager.default.removeItem(at: resources.directory)
         continuation.resume(throwing: error)
