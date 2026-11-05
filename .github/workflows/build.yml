@@ -33,7 +33,7 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Verify HEIF Live Photo conversion
+      - name: Verify Live Photo export and MOV timing
         shell: bash
         run: |
           set -euo pipefail

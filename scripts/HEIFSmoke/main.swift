@@ -12,28 +12,95 @@ func require(_ condition: Bool, _ message: String) throws {
     if !condition { throw SmokeFailure.failed(message) }
 }
 
-func makeFixture(at url: URL) throws {
+func makeFixture(at url: URL, delays: [Double] = [0.1, 0.1]) throws {
     guard let destination = CGImageDestinationCreateWithURL(
-        url as CFURL, UTType.gif.identifier as CFString, 2, nil),
+        url as CFURL, UTType.gif.identifier as CFString, delays.count, nil),
           let context = CGContext(data: nil, width: 64, height: 64,
             bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
         throw SmokeFailure.failed("Cannot create GIF fixture")
     }
-    for color in [CGColor(red: 1, green: 0, blue: 0, alpha: 1),
-                  CGColor(red: 0, green: 1, blue: 0, alpha: 1)] {
+    let colors = [CGColor(red: 1, green: 0, blue: 0, alpha: 1),
+                  CGColor(red: 0, green: 1, blue: 0, alpha: 1),
+                  CGColor(red: 0, green: 0, blue: 1, alpha: 1),
+                  CGColor(red: 1, green: 1, blue: 0, alpha: 1)]
+    for (index, delay) in delays.enumerated() {
+        let color = colors[index % colors.count]
         context.setFillColor(color)
         context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
         guard let image = context.makeImage() else {
             throw SmokeFailure.failed("Cannot render fixture")
         }
         let options: [CFString: Any] = [
-            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 0.1]
+            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: delay]
         ]
         CGImageDestinationAddImage(destination, image, options as CFDictionary)
     }
     try require(CGImageDestinationFinalize(destination), "Cannot finish GIF fixture")
+}
+
+func thumbnailBytes(_ image: CGImage) throws -> [UInt8] {
+    var bytes = [UInt8](repeating: 0, count: 32 * 32 * 4)
+    try bytes.withUnsafeMutableBytes { pointer in
+        guard let context = CGContext(data: pointer.baseAddress, width: 32, height: 32,
+            bitsPerComponent: 8, bytesPerRow: 32 * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            throw SmokeFailure.failed("Cannot compare loop frames")
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 32, height: 32))
+    }
+    return bytes
+}
+
+func verifyMOV(_ resources: LivePhotoResources, expectedFrameCount: Int) async throws {
+    let asset = AVURLAsset(url: resources.videoURL)
+    let duration = try await asset.load(.duration)
+    let tracks = try await asset.loadTracks(withMediaType: .video)
+    guard let track = tracks.first else { throw SmokeFailure.failed("Missing video") }
+    let rate = try await track.load(.nominalFrameRate)
+    let descriptions = try await track.load(.formatDescriptions)
+    let range = try await track.load(.timeRange)
+    try require(descriptions.contains { CMFormatDescriptionGetMediaSubType($0) == kCMVideoCodecType_HEVC }, "Not HEVC")
+    try require(abs(rate - 30) < 0.01, "Not 30 FPS")
+    try require(CMTimeCompare(range.start, .zero) == 0, "Video does not start at zero")
+    let expectedDuration = CMTime(value: Int64(expectedFrameCount), timescale: 30)
+    try require(CMTimeCompare(duration, expectedDuration) == 0, "Wrong exact duration")
+    try require(duration.seconds >= 1 && duration.seconds <= 3, "Duration outside 1...3 seconds")
+
+    let reader = try AVAssetReader(asset: asset)
+    let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+    reader.add(output)
+    try require(reader.startReading(), "Cannot inspect compressed HEVC samples")
+    var count = 0
+    var lastSync = -1
+    while let sample = output.copyNextSampleBuffer() {
+        let expectedTime = CMTime(value: Int64(count), timescale: 30)
+        try require(CMTimeCompare(CMSampleBufferGetPresentationTimeStamp(sample), expectedTime) == 0,
+                    "Nonuniform sample timing")
+        let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[String: Any]]
+        let notSync = attachments?.first?[kCMSampleAttachmentKey_NotSync as String] as? Bool ?? false
+        if !notSync {
+            if lastSync >= 0 { try require(count - lastSync <= 30, "Keyframe interval exceeds 30 frames") }
+            lastSync = count
+        }
+        try require(lastSync >= 0, "First frame is not a sync frame")
+        count += 1
+    }
+    try require(reader.status == .completed && count == expectedFrameCount, "Wrong sample count")
+    try require(count - lastSync <= 30, "Final GOP exceeds 30 frames")
+
+    let generator = AVAssetImageGenerator(asset: asset)
+    generator.requestedTimeToleranceBefore = .zero
+    generator.requestedTimeToleranceAfter = .zero
+    let first = try thumbnailBytes(generator.copyCGImage(at: .zero, actualTime: nil))
+    let lastTime = CMTime(value: Int64(count - 1), timescale: 30)
+    let last = try thumbnailBytes(generator.copyCGImage(at: lastTime, actualTime: nil))
+    let difference = zip(first, last).enumerated().filter { $0.offset % 4 != 3 }
+        .reduce(0.0) { $0 + abs(Double($1.element.0) - Double($1.element.1)) } / (32 * 32 * 3)
+    try require(difference < 8, "Loop endpoint differs excessively from the first frame")
+    print("PASS: HEVC, 30 FPS, \(count) samples, exact duration \(duration.seconds)s, max GOP30 and blended loop endpoint")
 }
 
 func verifyConversion() async throws {
@@ -100,9 +167,26 @@ func verifyConversion() async throws {
     catch { rejectedMismatch = true }
     try require(rejectedMismatch, "Validator accepted a mismatched AssetIdentifier")
     print("PASS: mismatched AssetIdentifier was rejected")
+    try await verifyMOV(result, expectedFrameCount: 30)
+
+    for (name, delays, expectedCount) in [
+        ("fractional", Array(repeating: 0.11, count: 13), 43),
+        ("long", Array(repeating: 0.9, count: 4), 90)
+    ] {
+        let source = fixtureDirectory.appendingPathComponent("\(name).gif")
+        try makeFixture(at: source, delays: delays)
+        let converted = try await LivePhotoConverter().convert(sourceURL: source) { _ in }
+        defer { try? FileManager.default.removeItem(at: converted.directory) }
+        try await LivePhotoPairValidator.validate(converted)
+        try await verifyMOV(converted, expectedFrameCount: expectedCount)
+    }
+    // Also exercise AVFoundation video import, rather than GIF only.
+    let fromVideo = try await LivePhotoConverter().convert(sourceURL: result.videoURL) { _ in }
+    defer { try? FileManager.default.removeItem(at: fromVideo.directory) }
+    try await verifyMOV(fromVideo, expectedFrameCount: 30)
 }
 
-DispatchQueue.global().asyncAfter(deadline: .now() + 60) {
+DispatchQueue.global().asyncAfter(deadline: .now() + 180) {
     fputs("PhotoKit conversion check timed out\n", stderr)
     exit(1)
 }

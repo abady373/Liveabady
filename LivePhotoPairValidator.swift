@@ -35,6 +35,19 @@ enum LivePhotoPairValidator {
         guard !videoTracks.isEmpty, let metadataTrack = metadataTracks.first else {
             throw ConversionError.message("فيديو الحركة لا يحتوي المسارات اللازمة للصورة الحية.")
         }
+        let videoTrack = videoTracks[0]
+        let frameRate = try await videoTrack.load(.nominalFrameRate)
+        let trackRange = try await videoTrack.load(.timeRange)
+        let descriptions = try await videoTrack.load(.formatDescriptions)
+        guard duration.seconds >= LivePhotoConverter.minimumDuration - 0.000_001,
+              duration.seconds <= LivePhotoConverter.maximumDuration + 0.000_001,
+              abs(frameRate - Float(LivePhotoConverter.fps)) < 0.01,
+              CMTimeCompare(trackRange.start, .zero) == 0,
+              descriptions.contains(where: {
+                  CMFormatDescriptionGetMediaSubType($0) == kCMVideoCodecType_HEVC
+              }) else {
+            throw ConversionError.message("يجب أن يكون MOV بترميز HEVC و٣٠ إطاراً في الثانية ومدة من ثانية إلى ٣ ثوانٍ.")
+        }
 
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: metadataTrack, outputSettings: nil)

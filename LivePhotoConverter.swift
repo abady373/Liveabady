@@ -5,6 +5,7 @@ import CoreMedia
 import CoreVideo
 import ImageIO
 import UniformTypeIdentifiers
+import VideoToolbox
 
 struct LivePhotoResources {
     let directory: URL
@@ -28,7 +29,9 @@ final class LivePhotoConverter {
     static let width = 1284
     static let height = 2778
     static let fps: Int32 = 30
+    static let minimumDuration = 1.0
     static let maximumDuration = 3.0
+    static let loopBlendFrameCount = 6
 
     func convert(sourceURL: URL,
                  progress: @escaping @Sendable (Double) -> Void) async throws -> LivePhotoResources {
@@ -162,6 +165,7 @@ private final class EncodingJob {
     private var metadataDone = false
     private var finishing = false
     private var completed = false
+    private var loopAnchor: CGImage?
 
     init(frames: FrameSource, queue: DispatchQueue,
          progress: @escaping @Sendable (Double) -> Void,
@@ -172,7 +176,10 @@ private final class EncodingJob {
         self.continuation = continuation
         let identifier = UUID().uuidString
         self.identifier = identifier
-        frameCount = max(2, Int(ceil(frames.duration * Double(LivePhotoConverter.fps))))
+        let minimumFrames = Int(LivePhotoConverter.minimumDuration * Double(LivePhotoConverter.fps))
+        let maximumFrames = Int(LivePhotoConverter.maximumDuration * Double(LivePhotoConverter.fps))
+        frameCount = min(maximumFrames, max(minimumFrames,
+            Int(ceil(frames.duration * Double(LivePhotoConverter.fps)))))
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("LivePhoto-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -190,14 +197,16 @@ private final class EncodingJob {
             writer.metadata = [contentID]
 
             let settings: [String: Any] = [
-                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoCodecKey: AVVideoCodecType.hevc,
                 AVVideoWidthKey: LivePhotoConverter.width,
                 AVVideoHeightKey: LivePhotoConverter.height,
                 AVVideoCompressionPropertiesKey: [
                     AVVideoAverageBitRateKey: 12_000_000,
                     AVVideoExpectedSourceFrameRateKey: LivePhotoConverter.fps,
                     AVVideoMaxKeyFrameIntervalKey: LivePhotoConverter.fps,
-                    AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+                    AVVideoMaxKeyFrameIntervalDurationKey: 1.0,
+                    AVVideoAllowFrameReorderingKey: false,
+                    AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main_AutoLevel as String
                 ],
                 AVVideoColorPropertiesKey: [
                     AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
@@ -205,6 +214,9 @@ private final class EncodingJob {
                     AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
                 ]
             ]
+            guard writer.canApply(outputSettings: settings, forMediaType: .video) else {
+                throw ConversionError.message("الجهاز لا يدعم تصدير HEVC بالإعدادات المحددة.")
+            }
             let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
             videoInput.expectsMediaDataInRealTime = false
             let pixels = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: videoInput,
@@ -278,9 +290,21 @@ private final class EncodingJob {
                 while videoInput.isReadyForMoreMediaData && nextFrame < frameCount {
                     try autoreleasepool {
                         let time = CMTime(value: Int64(nextFrame), timescale: LivePhotoConverter.fps)
-                        let image = try frames.image(at: time.seconds)
-                        let (buffer, renderedImage) = try render(image)
-                        if nextFrame == 0 { try writePhoto(renderedImage) }
+                        // Repeat short sources to reach one second. Every MOV
+                        // sample keeps a distinct, monotonically increasing PTS.
+                        let sourceTime = frames.duration < LivePhotoConverter.minimumDuration
+                            ? time.seconds.truncatingRemainder(dividingBy: frames.duration)
+                            : time.seconds
+                        let image = try frames.image(at: sourceTime)
+                        let blendStart = frameCount - LivePhotoConverter.loopBlendFrameCount
+                        let blend = nextFrame >= blendStart
+                            ? CGFloat(nextFrame - blendStart + 1) / CGFloat(LivePhotoConverter.loopBlendFrameCount)
+                            : 0
+                        let (buffer, renderedImage) = try render(image, loopBlend: blend)
+                        if nextFrame == 0 {
+                            try writePhoto(renderedImage)
+                            loopAnchor = try makeLoopAnchor(renderedImage)
+                        }
                         guard pixels.append(buffer, withPresentationTime: time) else {
                             throw writer.error ?? ConversionError.message("تعذّرت كتابة إطار الفيديو.")
                         }
@@ -297,7 +321,7 @@ private final class EncodingJob {
         }
     }
 
-    private func render(_ image: CGImage) throws -> (CVPixelBuffer, CGImage) {
+    private func render(_ image: CGImage, loopBlend: CGFloat) throws -> (CVPixelBuffer, CGImage) {
         guard let pool = pixels.pixelBufferPool else {
             throw ConversionError.message("تعذّر تخصيص ذاكرة الفيديو.")
         }
@@ -325,10 +349,33 @@ private final class EncodingJob {
         context.draw(image, in: CGRect(x: (CGFloat(width) - size.width) / 2,
                                       y: (CGFloat(height) - size.height) / 2,
                                       width: size.width, height: size.height))
+        // Blend the final 0.2 seconds back to the first opaque rendered frame.
+        // This prepares a visual loop boundary; iOS controls wallpaper playback.
+        if loopBlend > 0, let loopAnchor {
+            context.saveGState()
+            context.setAlpha(loopBlend)
+            context.draw(loopAnchor, in: CGRect(x: 0, y: 0, width: width, height: height))
+            context.restoreGState()
+        }
         guard let rendered = context.makeImage() else {
             throw ConversionError.message("تعذّر استخراج الصورة الثابتة.")
         }
         return (buffer, rendered)
+    }
+
+    private func makeLoopAnchor(_ image: CGImage) throws -> CGImage {
+        // Own this bitmap separately from the reusable CVPixelBuffer pool.
+        guard let context = CGContext(data: nil, width: image.width, height: image.height,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            throw ConversionError.message("تعذّر تجهيز الإطار الأول للانتقال الختامي.")
+        }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard let anchor = context.makeImage() else {
+            throw ConversionError.message("تعذّر حفظ إطار بداية الحركة.")
+        }
+        return anchor
     }
 
     private func writePhoto(_ image: CGImage) throws {
