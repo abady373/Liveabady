@@ -4,6 +4,7 @@ import AVFoundation
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import Photos
 
 enum SmokeFailure: Error { case failed(String) }
 
@@ -87,8 +88,24 @@ func verifyConversion() async throws {
     try require(foundStillTime, "Missing still-image-time marker")
     print("PASS: production converter created decodable public.heic at 1284x2778")
     print("PASS: HEIC/MOV identifiers match and still-image-time starts at zero")
+
+    // Run the same validation and PhotoKit loader used by the iPhone app.
+    _ = try await PhotoLibraryService.preview(result)
+    print("PASS: PhotoKit loaded the final Live Photo with photo and paired-video resources")
+    let mismatched = LivePhotoResources(directory: result.directory,
+        photoURL: result.photoURL, videoURL: result.videoURL,
+        assetIdentifier: UUID().uuidString, photoTime: result.photoTime)
+    var rejectedMismatch = false
+    do { try await LivePhotoPairValidator.validate(mismatched) }
+    catch { rejectedMismatch = true }
+    try require(rejectedMismatch, "Validator accepted a mismatched AssetIdentifier")
+    print("PASS: mismatched AssetIdentifier was rejected")
 }
 
+DispatchQueue.global().asyncAfter(deadline: .now() + 60) {
+    fputs("PhotoKit conversion check timed out\n", stderr)
+    exit(1)
+}
 Task {
     do {
         try await verifyConversion()

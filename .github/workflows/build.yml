@@ -10,6 +10,7 @@ on:
       - 'ArabicLivePhoto.xcodeproj/**'
       - export-unsigned-ipa.sh
       - 'scripts/**'
+      - 'Assets.xcassets/**'
       - .github/workflows/build.yml
 
 permissions:
@@ -36,7 +37,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          xcrun swiftc -swift-version 5 LivePhotoConverter.swift scripts/HEIFSmoke/main.swift -o "$RUNNER_TEMP/livephoto-heif-smoke"
+          xcrun swiftc -swift-version 5 LivePhotoConverter.swift LivePhotoPairValidator.swift PhotoLibraryService.swift scripts/HEIFSmoke/main.swift -o "$RUNNER_TEMP/livephoto-heif-smoke"
           "$RUNNER_TEMP/livephoto-heif-smoke"
 
       - name: Build unsigned device IPA
@@ -50,13 +51,15 @@ jobs:
           unzip -t build/IPA/ArabicLivePhoto-unsigned.ipa
           unzip -Z1 build/IPA/ArabicLivePhoto-unsigned.ipa | grep -Fx 'Payload/ArabicLivePhoto.app/ArabicLivePhoto'
           xcrun lipo -archs build/Device/Build/Products/Release-iphoneos/ArabicLivePhoto.app/ArabicLivePhoto
+          python3 scripts/verify-app-icon.py build/Device/Build/Products/Release-iphoneos/ArabicLivePhoto.app
+          shasum -a 256 build/IPA/ArabicLivePhoto-unsigned.ipa
 
       - name: Upload IPA
         id: ipa
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
-          name: ArabicLivePhoto-HEIF-unsigned-IPA
           path: build/IPA/ArabicLivePhoto-unsigned.ipa
+          archive: false
           if-no-files-found: error
           retention-days: 14
 
@@ -64,4 +67,4 @@ jobs:
         env:
           ARTIFACT_URL: ${{ steps.ipa.outputs.artifact-url }}
         run: |
-          printf '### Unsigned iPhone IPA\n\n[Download the IPA artifact](%s)\n\nExtract the downloaded ZIP, then sign the IPA in ESign before installation.\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          printf '### Unsigned iPhone IPA\n\n[Download ArabicLivePhoto-unsigned.ipa](%s)\n\nSingle IPA file, without an additional ZIP wrapper. Sign it in ESign before installation.\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"

@@ -10,6 +10,8 @@ struct LivePhotoResources {
     let directory: URL
     let photoURL: URL
     let videoURL: URL
+    let assetIdentifier: String
+    let photoTime: CMTime
 }
 
 enum ConversionError: LocalizedError {
@@ -176,7 +178,8 @@ private final class EncodingJob {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let resources = LivePhotoResources(directory: directory,
                                        photoURL: directory.appendingPathComponent("photo.heic"),
-                                       videoURL: directory.appendingPathComponent("paired.mov"))
+                                       videoURL: directory.appendingPathComponent("paired.mov"),
+                                       assetIdentifier: identifier, photoTime: .zero)
         self.resources = resources
         do {
             let writer = try AVAssetWriter(outputURL: resources.videoURL, fileType: .mov)
@@ -260,7 +263,7 @@ private final class EncodingJob {
             item.dataType = kCMMetadataBaseDataType_SInt8 as String
             item.value = NSNumber(value: Int8(0))
             let group = AVTimedMetadataGroup(items: [item], timeRange: CMTimeRange(
-                start: .zero, duration: CMTime(value: 1, timescale: LivePhotoConverter.fps)))
+                start: resources.photoTime, duration: CMTime(value: 1, timescale: LivePhotoConverter.fps)))
             guard metadata.append(group) else {
                 fail(writer.error ?? ConversionError.message("تعذّرت كتابة توقيت الصورة."))
                 return

@@ -11,6 +11,8 @@
 		A10000000000000000000003 /* MediaPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* MediaPicker.swift */; };
 		A10000000000000000000004 /* LivePhotoConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* LivePhotoConverter.swift */; };
 		A10000000000000000000005 /* PhotoLibraryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* PhotoLibraryService.swift */; };
+		A10000000000000000000006 /* LivePhotoPairValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* LivePhotoPairValidator.swift */; };
+		A10000000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +23,8 @@
 		A20000000000000000000005 /* PhotoLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryService.swift; sourceTree = "<group>"; };
 		A20000000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A20000000000000000000007 /* ArabicLivePhoto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ArabicLivePhoto.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000008 /* LivePhotoPairValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePhotoPairValidator.swift; sourceTree = "<group>"; };
+		A20000000000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,6 +53,8 @@
 				A20000000000000000000003 /* MediaPicker.swift */,
 				A20000000000000000000004 /* LivePhotoConverter.swift */,
 				A20000000000000000000005 /* PhotoLibraryService.swift */,
+				A20000000000000000000008 /* LivePhotoPairValidator.swift */,
+				A20000000000000000000009 /* Assets.xcassets */,
 				A20000000000000000000006 /* Info.plist */,
 			);
 			path = ".";
@@ -117,6 +123,7 @@
 				A10000000000000000000003 /* MediaPicker.swift in Sources */,
 				A10000000000000000000004 /* LivePhotoConverter.swift in Sources */,
 				A10000000000000000000005 /* PhotoLibraryService.swift in Sources */,
+				A10000000000000000000006 /* LivePhotoPairValidator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -126,7 +133,7 @@
 		A80000000000000000000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = ();
+			files = (A10000000000000000000007 /* Assets.xcassets in Resources */,);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
@@ -175,13 +182,14 @@
 		AA0000000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks",);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.ArabicLivePhoto;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -197,12 +205,13 @@
 		AA0000000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks",);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.ArabicLivePhoto;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
