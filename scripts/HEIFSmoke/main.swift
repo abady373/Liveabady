@@ -97,8 +97,11 @@ func verifyMOV(_ resources: LivePhotoResources, expectedFrameCount: Int) async t
     let first = try thumbnailBytes(generator.copyCGImage(at: .zero, actualTime: nil))
     let lastTime = CMTime(value: Int64(count - 1), timescale: 30)
     let last = try thumbnailBytes(generator.copyCGImage(at: lastTime, actualTime: nil))
-    let difference = zip(first, last).enumerated().filter { $0.offset % 4 != 3 }
-        .reduce(0.0) { $0 + abs(Double($1.element.0) - Double($1.element.1)) } / (32 * 32 * 3)
+    var totalDifference = 0.0
+    for index in first.indices where index % 4 != 3 {
+        totalDifference += abs(Double(first[index]) - Double(last[index]))
+    }
+    let difference = totalDifference / 3072.0
     try require(difference < 8, "Loop endpoint differs excessively from the first frame")
     print("PASS: HEVC, 30 FPS, \(count) samples, exact duration \(duration.seconds)s, max GOP30 and blended loop endpoint")
 }
