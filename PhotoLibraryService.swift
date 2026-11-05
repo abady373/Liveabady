@@ -1,6 +1,7 @@
 import Foundation
 import Photos
 import UIKit
+import UniformTypeIdentifiers
 
 enum PhotoLibraryService {
     /// Photos validation here does not test Lock Screen eligibility.
@@ -35,7 +36,7 @@ enum PhotoLibraryService {
             try await PHPhotoLibrary.shared().performChanges {
                 let request = PHAssetCreationRequest.forAsset()
                 let photoOptions = PHAssetResourceCreationOptions()
-                photoOptions.uniformTypeIdentifier = "public.jpeg"
+                photoOptions.uniformTypeIdentifier = UTType.heic.identifier
                 let videoOptions = PHAssetResourceCreationOptions()
                 videoOptions.uniformTypeIdentifier = "com.apple.quicktime-movie"
                 // ONE asset, TWO resources. Do not create separate requests.

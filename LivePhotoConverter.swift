@@ -19,7 +19,7 @@ enum ConversionError: LocalizedError {
     }
 }
 
-/// A paired JPEG + MOV, not a promise of Lock Screen wallpaper eligibility.
+/// A paired HEIC + MOV, not a promise of Lock Screen wallpaper eligibility.
 final class LivePhotoConverter {
     // Native iPhone 14 Plus aspect ratio. These are app choices, not Apple's
     // documented requirements for accepting a Live Photo as a wallpaper.
@@ -175,7 +175,7 @@ private final class EncodingJob {
             .appendingPathComponent("LivePhoto-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let resources = LivePhotoResources(directory: directory,
-                                       photoURL: directory.appendingPathComponent("photo.jpg"),
+                                       photoURL: directory.appendingPathComponent("photo.heic"),
                                        videoURL: directory.appendingPathComponent("paired.mov"))
         self.resources = resources
         do {
@@ -330,8 +330,8 @@ private final class EncodingJob {
 
     private func writePhoto(_ image: CGImage) throws {
         guard let destination = CGImageDestinationCreateWithURL(
-            resources.photoURL as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
-            throw ConversionError.message("تعذّر إنشاء ملف الصورة.")
+            resources.photoURL as CFURL, UTType.heic.identifier as CFString, 1, nil) else {
+            throw ConversionError.message("تعذّر إنشاء صورة HEIF على هذا الجهاز.")
         }
         let properties: [CFString: Any] = [
             kCGImageDestinationLossyCompressionQuality: 0.95,
@@ -340,7 +340,17 @@ private final class EncodingJob {
         ]
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else {
-            throw ConversionError.message("تعذّر حفظ بيانات الصورة.")
+            throw ConversionError.message("تعذّر ترميز الصورة وحفظها بصيغة HEIF.")
+        }
+        // Check the encoded bytes and pairing metadata, not just the extension.
+        // Do not silently fall back to JPEG if HEIF encoding is unavailable.
+        guard let source = CGImageSourceCreateWithURL(resources.photoURL as CFURL, nil),
+              let type = CGImageSourceGetType(source),
+              type as String == UTType.heic.identifier,
+              let encodedProperties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+              let makerApple = encodedProperties[kCGImagePropertyMakerAppleDictionary as String] as? [String: Any],
+              makerApple["17"] as? String == identifier else {
+            throw ConversionError.message("تعذّر التحقق من صيغة HEIF أو معرّف ربط الصورة بفيديو الحركة.")
         }
     }
 

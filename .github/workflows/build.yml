@@ -9,6 +9,7 @@ on:
       - Info.plist
       - 'ArabicLivePhoto.xcodeproj/**'
       - export-unsigned-ipa.sh
+      - 'scripts/**'
       - .github/workflows/build.yml
 
 permissions:
@@ -31,6 +32,13 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: Verify HEIF Live Photo conversion
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun swiftc -swift-version 5 LivePhotoConverter.swift scripts/HEIFSmoke/main.swift -o "$RUNNER_TEMP/livephoto-heif-smoke"
+          "$RUNNER_TEMP/livephoto-heif-smoke"
+
       - name: Build unsigned device IPA
         run: bash export-unsigned-ipa.sh
 
@@ -47,7 +55,7 @@ jobs:
         id: ipa
         uses: actions/upload-artifact@v4
         with:
-          name: ArabicLivePhoto-unsigned-IPA
+          name: ArabicLivePhoto-HEIF-unsigned-IPA
           path: build/IPA/ArabicLivePhoto-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
