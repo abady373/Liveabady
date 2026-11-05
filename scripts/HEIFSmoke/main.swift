@@ -74,22 +74,32 @@ func verifyMOV(_ resources: LivePhotoResources, expectedFrameCount: Int) async t
     reader.add(output)
     try require(reader.startReading(), "Cannot inspect compressed HEVC samples")
     var count = 0
-    var lastSync = -1
+    var presentationTimes: [Double] = []
+    var syncFrameIndexes: [Int] = []
     while let sample = output.copyNextSampleBuffer() {
-        let expectedTime = CMTime(value: Int64(count), timescale: 30)
-        try require(CMTimeCompare(CMSampleBufferGetPresentationTimeStamp(sample), expectedTime) == 0,
-                    "Nonuniform sample timing")
+        let time = CMSampleBufferGetPresentationTimeStamp(sample)
+        presentationTimes.append(time.seconds)
         let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[String: Any]]
         let notSync = attachments?.first?[kCMSampleAttachmentKey_NotSync as String] as? Bool ?? false
         if !notSync {
-            if lastSync >= 0 { try require(count - lastSync <= 30, "Keyframe interval exceeds 30 frames") }
-            lastSync = count
+            syncFrameIndexes.append(Int((time.seconds * 30).rounded()))
         }
-        try require(lastSync >= 0, "First frame is not a sync frame")
         count += 1
     }
     try require(reader.status == .completed && count == expectedFrameCount, "Wrong sample count")
-    try require(count - lastSync <= 30, "Final GOP exceeds 30 frames")
+    // Compressed HEVC samples may be delivered in decode order. FPS is a
+    // presentation-timeline property, so verify sorted PTS, not read order.
+    for (index, time) in presentationTimes.sorted().enumerated() {
+        let expectedTime = Double(index) / 30.0
+        try require(abs(time - expectedTime) < 0.000_001,
+                    "Nonuniform presentation timing at frame \(index): \(time), expected \(expectedTime)")
+    }
+    let syncIndexes = syncFrameIndexes.sorted()
+    try require(syncIndexes.first == 0, "First presentation frame is not a sync frame")
+    for index in 1..<syncIndexes.count {
+        try require(syncIndexes[index] - syncIndexes[index - 1] <= 30, "Keyframe interval exceeds 30 frames")
+    }
+    try require(count - (syncIndexes.last ?? -1) <= 30, "Final GOP exceeds 30 frames")
 
     let generator = AVAssetImageGenerator(asset: asset)
     generator.requestedTimeToleranceBefore = .zero
