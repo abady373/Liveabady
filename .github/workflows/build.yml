@@ -1,0 +1,38 @@
+name: Build unsigned iPhone IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest
+
+      - name: Build Archive
+        run: |
+          cd ArabicLivePhoto || cd .
+          xcodebuild -scheme ArabicLivePhoto -sdk iphoneos -configuration Release clean archive -archivePath build/ArabicLivePhoto.xcarchive CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+      - name: Package IPA
+        run: |
+          mkdir -p build/IPA
+          cd ArabicLivePhoto || cd .
+          xcrun -sdk iphoneos PackageApplication -v build/ArabicLivePhoto.xcarchive/Products/Applications/*.app -o ../build/IPA/ArabicLivePhoto-unsigned.ipa || true
+          cd build
+          mkdir -p Payload
+          cp -R ArabicLivePhoto.xcarchive/Products/Applications/*.app Payload/
+          zip -r IPA/ArabicLivePhoto-unsigned.ipa Payload
+          rm -rf Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArabicLivePhoto-unsigned-IPA
+          path: ArabicLivePhoto/build/IPA/ArabicLivePhoto-unsigned-IPA.ipa
